@@ -81,11 +81,18 @@ static struct bt_data zmk_ble_ad[] = {
     BT_DATA_BYTES(BT_DATA_UUID16_SOME, 0x12, 0x18, /* HID Service */
                   0x0f, 0x18                       /* Battery Service */
                   ),
-#if IS_ENABLED(CONFIG_ZMK_STUDIO)
-    /* Include Studio GATT service UUID so Web Bluetooth can find this device */
-    BT_DATA_BYTES(BT_DATA_UUID128_SOME, ZMK_STUDIO_BT_SERVICE_UUID_BYTES),
-#endif
 };
+
+#if IS_ENABLED(CONFIG_ZMK_STUDIO)
+/* Studio GATT service UUID in scan response to avoid overflowing the primary
+ * advertising payload (31-byte limit). Web Bluetooth discovers via scan response. */
+static const struct bt_data zmk_ble_sd[] = {
+    BT_DATA_BYTES(BT_DATA_UUID128_SOME, ZMK_STUDIO_BT_SERVICE_UUID_BYTES),
+};
+#define ZMK_BLE_SD zmk_ble_sd, ARRAY_SIZE(zmk_ble_sd)
+#else
+#define ZMK_BLE_SD NULL, 0
+#endif
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
 
@@ -177,7 +184,7 @@ bool zmk_ble_profile_is_connected(uint8_t index) {
     advertising_status = ZMK_ADV_DIR;
 
 #define CHECKED_OPEN_ADV()                                                                         \
-    err = bt_le_adv_start(ZMK_ADV_CONN_NAME, zmk_ble_ad, ARRAY_SIZE(zmk_ble_ad), NULL, 0);         \
+    err = bt_le_adv_start(ZMK_ADV_CONN_NAME, zmk_ble_ad, ARRAY_SIZE(zmk_ble_ad), ZMK_BLE_SD);     \
     if (err) {                                                                                     \
         LOG_ERR("Advertising failed to start (err %d)", err);                                      \
         return err;                                                                                \
