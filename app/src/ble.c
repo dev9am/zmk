@@ -70,12 +70,21 @@ BUILD_ASSERT(
     DEVICE_NAME_LEN <= CONFIG_BT_DEVICE_NAME_MAX,
     "ERROR: BLE device name is too long. Max length: " STRINGIFY(CONFIG_BT_DEVICE_NAME_MAX));
 
+/* ZMK Studio BLE service UUID (little-endian):
+ * 00000000-0196-6107-c967-c5cfb1c2482a */
+#define ZMK_STUDIO_BT_SERVICE_UUID_BYTES                                                           \
+    0x2a, 0x48, 0xc2, 0xb1, 0xcf, 0xc5, 0x67, 0xc9, 0x07, 0x61, 0x96, 0x01, 0x00, 0x00, 0x00, 0x00
+
 static struct bt_data zmk_ble_ad[] = {
     BT_DATA_BYTES(BT_DATA_GAP_APPEARANCE, 0xC1, 0x03),
     BT_DATA_BYTES(BT_DATA_FLAGS, (BT_LE_AD_GENERAL | BT_LE_AD_NO_BREDR)),
     BT_DATA_BYTES(BT_DATA_UUID16_SOME, 0x12, 0x18, /* HID Service */
                   0x0f, 0x18                       /* Battery Service */
                   ),
+#if IS_ENABLED(CONFIG_ZMK_STUDIO)
+    /* Include Studio GATT service UUID so Web Bluetooth can find this device */
+    BT_DATA_BYTES(BT_DATA_UUID128_SOME, ZMK_STUDIO_BT_SERVICE_UUID_BYTES),
+#endif
 };
 
 #if IS_ENABLED(CONFIG_ZMK_SPLIT_BLE) && IS_ENABLED(CONFIG_ZMK_SPLIT_ROLE_CENTRAL)
@@ -193,6 +202,13 @@ int update_advertising(void) {
         // LOG_DBG("Directed advertising to %s", addr_str);
         // desired_adv = ZMK_ADV_DIR;
     }
+#if IS_ENABLED(CONFIG_ZMK_STUDIO)
+    /* When ZMK Studio is enabled, keep advertising even while connected so
+     * Web Bluetooth (e.g. macOS Chrome) can find and connect for configuration. */
+    else {
+        desired_adv = ZMK_ADV_CONN;
+    }
+#endif
     LOG_DBG("advertising from %d to %d", advertising_status, desired_adv);
 
     switch (desired_adv + CURR_ADV(advertising_status)) {

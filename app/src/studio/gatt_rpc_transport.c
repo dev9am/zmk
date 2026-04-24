@@ -27,6 +27,32 @@ static bool handling_rx = false;
 
 static atomic_t notify_size;
 
+/* Track the BLE connection that is actively using Studio.
+ * This allows Studio to work on a non-active-profile connection
+ * (e.g. Web Bluetooth connecting independently from the HID host). */
+static struct bt_conn *studio_conn = NULL;
+
+static void studio_conn_set(struct bt_conn *conn) {
+    if (studio_conn == conn) {
+        return;
+    }
+    if (studio_conn) {
+        bt_conn_unref(studio_conn);
+    }
+    studio_conn = conn ? bt_conn_ref(conn) : NULL;
+}
+
+static void studio_disconnected(struct bt_conn *conn, uint8_t reason) {
+    if (studio_conn == conn) {
+        LOG_INF("Studio connection disconnected");
+        studio_conn_set(NULL);
+    }
+}
+
+BT_CONN_CB_DEFINE(studio_conn_callbacks) = {
+    .disconnected = studio_disconnected,
+};
+
 static void rpc_ccc_cfg_changed(const struct bt_gatt_attr *attr, uint16_t value) {
     ARG_UNUSED(attr);
 
@@ -66,6 +92,9 @@ static ssize_t write_rpc_req(struct bt_conn *conn, const struct bt_gatt_attr *at
         return len;
     }
 
+    /* Remember which connection is talking to Studio */
+    studio_conn_set(conn);
+
     uint32_t copied = 0;
     struct ring_buf *rpc_buf = zmk_rpc_get_rx_buf();
     while (copied < len) {
@@ -104,10 +133,10 @@ static uint16_t get_notify_size_for_conn(struct bt_conn *conn) {
 }
 
 static void refresh_notify_size(void) {
-    struct bt_conn *conn = zmk_ble_active_profile_conn();
+    struct bt_conn *conn = studio_conn ? studio_conn : zmk_ble_active_profile_conn();
 
     uint16_t ns = get_notify_size_for_conn(conn);
-    if (conn) {
+    if (conn && conn != studio_conn) {
         bt_conn_unref(conn);
     }
 
@@ -130,7 +159,9 @@ static struct bt_gatt_indicate_params rpc_indicate_params = {
 };
 
 static void notif_rpc_tx_cb(struct k_work *work) {
-    struct bt_conn *conn = zmk_ble_active_profile_conn();
+    /* Prefer the tracked Studio connection; fall back to active profile */
+    struct bt_conn *conn = studio_conn ? studio_conn : zmk_ble_active_profile_conn();
+    bool conn_is_borrowed = (conn != NULL && conn != studio_conn);
     struct ring_buf *tx_buf = zmk_rpc_get_tx_buf();
 
     if (!conn) {
@@ -169,7 +200,9 @@ static void notif_rpc_tx_cb(struct k_work *work) {
         } while (notify_attempts-- > 0);
     }
 
-    bt_conn_unref(conn);
+    if (conn_is_borrowed) {
+        bt_conn_unref(conn);
+    }
 }
 
 static K_WORK_DEFINE(notify_tx_work, notif_rpc_tx_cb);
