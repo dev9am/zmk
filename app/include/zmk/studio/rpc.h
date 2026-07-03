@@ -219,6 +219,9 @@ struct ring_buf *zmk_rpc_get_tx_buf(void);
 struct ring_buf *zmk_rpc_get_rx_buf(void);
 void zmk_rpc_rx_notify(void);
 
+void zmk_rpc_override_transport(enum zmk_transport transport);
+void zmk_rpc_clear_transport_override(void);
+
 #define ZMK_RPC_TRANSPORT(name, _transport, _rx_start, _rx_stop, _tx_user_data, _tx_notify)        \
     STRUCT_SECTION_ITERABLE(zmk_rpc_transport, name) = {                                           \
         .transport = _transport,                                                                   \

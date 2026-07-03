@@ -46,6 +46,7 @@ static void studio_disconnected(struct bt_conn *conn, uint8_t reason) {
     if (studio_conn == conn) {
         LOG_INF("Studio connection disconnected");
         studio_conn_set(NULL);
+        zmk_rpc_clear_transport_override();
     }
 }
 
@@ -89,7 +90,16 @@ static ssize_t read_rpc_resp(struct bt_conn *conn, const struct bt_gatt_attr *at
 static ssize_t write_rpc_req(struct bt_conn *conn, const struct bt_gatt_attr *attr, const void *buf,
                              uint16_t len, uint16_t offset, uint8_t flags) {
     if (!handling_rx) {
-        return len;
+        /* A Studio client is writing over BLE while another transport is
+         * selected (e.g. the USB endpoint is active because a cable is
+         * plugged in). Without this override the write would be silently
+         * dropped and the client would time out. Treat the write as an
+         * explicit request to use the BLE RPC transport. */
+        zmk_rpc_override_transport(ZMK_TRANSPORT_BLE);
+
+        if (!handling_rx) {
+            return len;
+        }
     }
 
     /* Remember which connection is talking to Studio */

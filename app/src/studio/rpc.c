@@ -242,8 +242,12 @@ static void rpc_main(void) {
 K_THREAD_DEFINE(studio_rpc_thread, CONFIG_ZMK_STUDIO_RPC_THREAD_STACK_SIZE, rpc_main, NULL, NULL,
                 NULL, K_LOWEST_APPLICATION_THREAD_PRIO, 0, 0);
 
+static bool transport_override_active;
+static enum zmk_transport transport_override;
+
 static void refresh_selected_transport(void) {
-    enum zmk_transport transport = zmk_endpoints_selected().transport;
+    enum zmk_transport transport =
+        transport_override_active ? transport_override : zmk_endpoints_selected().transport;
 
     k_mutex_lock(&rpc_transport_mutex, K_FOREVER);
 
@@ -277,6 +281,17 @@ static void refresh_selected_transport(void) {
 
 exit_refresh:
     k_mutex_unlock(&rpc_transport_mutex);
+}
+
+void zmk_rpc_override_transport(enum zmk_transport transport) {
+    transport_override_active = true;
+    transport_override = transport;
+    refresh_selected_transport();
+}
+
+void zmk_rpc_clear_transport_override(void) {
+    transport_override_active = false;
+    refresh_selected_transport();
 }
 
 static int zmk_rpc_init(void) {
