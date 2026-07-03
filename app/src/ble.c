@@ -37,6 +37,11 @@ LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 #include <zmk/event_manager.h>
 #include <zmk/events/ble_active_profile_changed.h>
 
+#if IS_ENABLED(CONFIG_ZMK_STUDIO) && IS_ENABLED(CONFIG_ZMK_USB)
+#include <zmk/events/usb_conn_state_changed.h>
+#include <zmk/usb.h>
+#endif
+
 #if IS_ENABLED(CONFIG_ZMK_BLE_PASSKEY_ENTRY)
 #include <zmk/events/keycode_state_changed.h>
 
@@ -209,10 +214,13 @@ int update_advertising(void) {
         // LOG_DBG("Directed advertising to %s", addr_str);
         // desired_adv = ZMK_ADV_DIR;
     }
-#if IS_ENABLED(CONFIG_ZMK_STUDIO)
+#if IS_ENABLED(CONFIG_ZMK_STUDIO) && IS_ENABLED(CONFIG_ZMK_USB)
     /* When ZMK Studio is enabled, keep advertising even while connected so
-     * Web Bluetooth (e.g. macOS Chrome) can find and connect for configuration. */
-    else {
+     * Web Bluetooth (e.g. macOS Chrome) can find and connect for configuration.
+     * Restricted to USB-powered operation: continuous advertising lets every
+     * bonded host connect at will, which can exhaust connection slots, starve
+     * the split peripheral link, and drain the battery during wireless use. */
+    else if (zmk_usb_is_powered()) {
         desired_adv = ZMK_ADV_CONN;
     }
 #endif
@@ -854,5 +862,18 @@ static int zmk_ble_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(zmk_ble, zmk_ble_listener);
 ZMK_SUBSCRIPTION(zmk_ble, zmk_keycode_state_changed);
 #endif /* IS_ENABLED(CONFIG_ZMK_BLE_PASSKEY_ENTRY) */
+
+#if IS_ENABLED(CONFIG_ZMK_STUDIO) && IS_ENABLED(CONFIG_ZMK_USB)
+/* Studio advertising is gated on USB power, so refresh it on plug/unplug */
+static int zmk_ble_usb_listener(const zmk_event_t *eh) {
+    if (as_zmk_usb_conn_state_changed(eh)) {
+        k_work_submit(&update_advertising_work);
+    }
+    return ZMK_EV_EVENT_BUBBLE;
+}
+
+ZMK_LISTENER(zmk_ble_usb, zmk_ble_usb_listener);
+ZMK_SUBSCRIPTION(zmk_ble_usb, zmk_usb_conn_state_changed);
+#endif /* IS_ENABLED(CONFIG_ZMK_STUDIO) && IS_ENABLED(CONFIG_ZMK_USB) */
 
 SYS_INIT(zmk_ble_init, APPLICATION, CONFIG_ZMK_BLE_INIT_PRIORITY);
