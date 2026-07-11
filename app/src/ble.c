@@ -31,10 +31,12 @@
 
 LOG_MODULE_DECLARE(zmk, CONFIG_ZMK_LOG_LEVEL);
 
+#include <zmk/activity.h>
 #include <zmk/ble.h>
 #include <zmk/keys.h>
 #include <zmk/split/bluetooth/uuid.h>
 #include <zmk/event_manager.h>
+#include <zmk/events/activity_state_changed.h>
 #include <zmk/events/ble_active_profile_changed.h>
 
 #if IS_ENABLED(CONFIG_ZMK_BLE_PASSKEY_ENTRY)
@@ -210,9 +212,11 @@ int update_advertising(void) {
         // desired_adv = ZMK_ADV_DIR;
     }
 #if IS_ENABLED(CONFIG_ZMK_STUDIO)
-    /* When ZMK Studio is enabled, keep advertising even while connected so
-     * Web Bluetooth (e.g. macOS Chrome) can find and connect for configuration. */
-    else {
+    /* When ZMK Studio is enabled, keep advertising while connected so Web
+     * Bluetooth (e.g. macOS Chrome) can find and connect for configuration.
+     * Gated on activity so an idle keyboard doesn't keep burning battery on
+     * advertising; tapping any key resumes it. */
+    else if (zmk_activity_get_state() == ZMK_ACTIVITY_ACTIVE) {
         desired_adv = ZMK_ADV_CONN;
     }
 #endif
@@ -854,5 +858,19 @@ static int zmk_ble_listener(const zmk_event_t *eh) {
 ZMK_LISTENER(zmk_ble, zmk_ble_listener);
 ZMK_SUBSCRIPTION(zmk_ble, zmk_keycode_state_changed);
 #endif /* IS_ENABLED(CONFIG_ZMK_BLE_PASSKEY_ENTRY) */
+
+#if IS_ENABLED(CONFIG_ZMK_STUDIO)
+/* Re-evaluate advertise-while-connected when activity state changes */
+static int ble_activity_listener(const zmk_event_t *eh) {
+    if (as_zmk_activity_state_changed(eh)) {
+        k_work_submit(&update_advertising_work);
+    }
+
+    return 0;
+}
+
+ZMK_LISTENER(zmk_ble_activity, ble_activity_listener);
+ZMK_SUBSCRIPTION(zmk_ble_activity, zmk_activity_state_changed);
+#endif /* IS_ENABLED(CONFIG_ZMK_STUDIO) */
 
 SYS_INIT(zmk_ble_init, APPLICATION, CONFIG_ZMK_BLE_INIT_PRIORITY);
