@@ -157,6 +157,14 @@ static int zmk_battery_init(void) {
         return -ENODEV;
     }
 
+    // Take the first sample here instead of leaving it to the timer. The periodic work runs on the
+    // low priority queue, which cannot preempt the main thread while it loads settings, so anything
+    // reading the level early in boot would otherwise see the initial 0 until that finishes.
+    int rc = zmk_battery_update(battery);
+    if (rc != 0) {
+        LOG_WRN("Failed to fetch the initial battery value: %d", rc);
+    }
+
     zmk_battery_start_reporting();
     return 0;
 }
